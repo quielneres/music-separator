@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Upload, Music, Settings, Library, Play, Pause, SkipForward, Volume2, VolumeX, Download } from 'lucide-react';
+import { Upload, Music, Settings, Library, Play, Pause, Square, SkipForward, Volume2, VolumeX, Download } from 'lucide-react';
 import StemPlayer from '@/components/StemPlayer';
 
 // URLs parametrizadas via variáveis de ambiente com fallback local
@@ -29,6 +29,7 @@ export default function Home() {
   // Multi-track player states
   const wavesurfersRef = useRef({});
   const isMasterPlayingRef = useRef(false);
+  const isSyncingRef = useRef(false);
   const [isMasterPlaying, setIsMasterPlaying] = useState(false);
   const [trackVolumes, setTrackVolumes] = useState({});
   const [trackMutes, setTrackMutes] = useState({});
@@ -37,7 +38,7 @@ export default function Home() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
 
-  // Mantém isMasterPlayingRef sempre sincronizado para eventos assíncronos
+  // Mantém isMasterPlayingRef sempre sincronizado
   useEffect(() => {
     isMasterPlayingRef.current = isMasterPlaying;
   }, [isMasterPlaying]);
@@ -294,15 +295,34 @@ export default function Home() {
       const firstStem = Object.keys(wavesurfersRef.current)[0];
       if (name === firstStem) {
         setIsMasterPlaying(false);
+        isMasterPlayingRef.current = false;
+      }
+    });
+
+    ws.on('play', () => {
+      setIsMasterPlaying(true);
+      isMasterPlayingRef.current = true;
+    });
+
+    ws.on('pause', () => {
+      const anyPlaying = Object.values(wavesurfersRef.current).some(w => {
+        try { return w && typeof w.isPlaying === 'function' && w.isPlaying(); } catch (e) { return false; }
+      });
+      if (!anyPlaying) {
+        setIsMasterPlaying(false);
+        isMasterPlayingRef.current = false;
       }
     });
 
     ws.on('interaction', () => {
+      if (isSyncingRef.current) return;
+      isSyncingRef.current = true;
+
       const time = ws.getCurrentTime();
       setCurrentTime(time);
-      const isCurrentlyPlaying = isMasterPlayingRef.current;
+      const isCurrentlyPlaying = isMasterPlayingRef.current || (typeof ws.isPlaying === 'function' && ws.isPlaying());
 
-      // Sincroniza todas as faixas sem descompasso
+      // Sincroniza todas as faixas sem loop
       Object.entries(wavesurfersRef.current).forEach(([k, w]) => {
         try {
           if (k !== name) {
@@ -315,6 +335,10 @@ export default function Home() {
           }
         } catch (e) {}
       });
+
+      setTimeout(() => {
+        isSyncingRef.current = false;
+      }, 50);
     });
 
     if (isMasterPlayingRef.current) {
@@ -327,17 +351,45 @@ export default function Home() {
   };
 
   const toggleMasterPlay = () => {
-    const nextPlaying = !isMasterPlayingRef.current;
-    setIsMasterPlaying(nextPlaying);
+    const instances = Object.values(wavesurfersRef.current);
+    if (!instances.length) return;
+
+    // Pergunta diretamente ao nó de áudio se há som tocando agora
+    const anyPlaying = instances.some(ws => {
+      try {
+        return ws && typeof ws.isPlaying === 'function' && ws.isPlaying();
+      } catch (e) {
+        return false;
+      }
+    });
+
+    if (anyPlaying) {
+      // Se estava tocando, PAUSA TODAS
+      instances.forEach(ws => {
+        try { ws.pause(); } catch (e) {}
+      });
+      setIsMasterPlaying(false);
+      isMasterPlayingRef.current = false;
+    } else {
+      // Se estava pausado, TOCA TODAS
+      instances.forEach(ws => {
+        try { ws.play().catch(() => {}); } catch (e) {}
+      });
+      setIsMasterPlaying(true);
+      isMasterPlayingRef.current = true;
+    }
+  };
+
+  const stopMasterPlay = () => {
     Object.values(wavesurfersRef.current).forEach(ws => {
       try {
-        if (nextPlaying) {
-          ws.play().catch(() => {});
-        } else {
-          ws.pause();
-        }
+        ws.pause();
+        ws.setTime(0);
       } catch (e) {}
     });
+    setIsMasterPlaying(false);
+    isMasterPlayingRef.current = false;
+    setCurrentTime(0);
   };
 
   const handleMasterSeek = (time) => {
@@ -803,8 +855,11 @@ export default function Home() {
                 {/* Master Studio Controls Dashboard */}
                 <div className="master-controls glass">
                   <div className="master-left">
-                    <button onClick={toggleMasterPlay} className="master-play-btn">
+                    <button onClick={toggleMasterPlay} className="master-play-btn" title={isMasterPlaying ? "Pausar" : "Tocar"}>
                       {isMasterPlaying ? <Pause size={22} fill="white" /> : <Play size={22} fill="white" style={{ marginLeft: 3 }} />}
+                    </button>
+                    <button onClick={stopMasterPlay} className="master-stop-btn" title="Parar e voltar ao início">
+                      <Square size={16} fill="white" />
                     </button>
                     <div className="time-display">
                       <span className="current-time">{formatTime(currentTime)}</span>
@@ -1221,6 +1276,26 @@ export default function Home() {
         .master-play-btn:hover {
           transform: scale(1.05);
           box-shadow: 0 6px 16px var(--primary-glow);
+        }
+
+        .master-stop-btn {
+          width: 36px;
+          height: 36px;
+          border-radius: 50%;
+          background: var(--glass);
+          border: 1px solid var(--glass-border);
+          color: white;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .master-stop-btn:hover {
+          transform: scale(1.05);
+          background: rgba(239, 68, 68, 0.2);
+          border-color: #ef4444;
         }
 
         .time-display {
