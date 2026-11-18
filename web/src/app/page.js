@@ -336,7 +336,7 @@ export default function Home() {
   const handleDownloadAll = () => {
     if (!stemsData || !stemsData.stems) return;
     stemsData.stems.forEach(stem => {
-      const url = `${AUDIO_BASE_URL}/output/${stemsData.folder}/${stem}`;
+      const url = `${AUDIO_BASE_URL}/output/${encodeURIComponent(stemsData.folder)}/${encodeURIComponent(stem)}`;
       const a = document.createElement('a');
       a.href = url;
       a.download = stem;
@@ -801,7 +801,7 @@ export default function Home() {
                     <StemPlayer 
                       key={stem}
                       name={stem}
-                      url={`${AUDIO_BASE_URL}/output/${stemsData.folder}/${stem}`}
+                      url={`${AUDIO_BASE_URL}/output/${encodeURIComponent(stemsData.folder)}/${encodeURIComponent(stem)}`}
                       color={['#8b5cf6', '#06b6d4', '#ec4899', '#10b981'][idx % 4]}
                       volume={trackVolumes[stem] !== undefined ? trackVolumes[stem] * masterVolume : 0.8 * masterVolume}
                       isMuted={trackMutes[stem] || false}
@@ -811,7 +811,7 @@ export default function Home() {
                       onMuteToggle={() => setTrackMutes(prev => ({ ...prev, [stem]: !prev[stem] }))}
                       onSoloToggle={() => setTrackSolos(prev => ({ ...prev, [stem]: !prev[stem] }))}
                       onDownload={() => {
-                        const url = `${AUDIO_BASE_URL}/output/${stemsData.folder}/${stem}`;
+                        const url = `${AUDIO_BASE_URL}/output/${encodeURIComponent(stemsData.folder)}/${encodeURIComponent(stem)}`;
                         const a = document.createElement('a');
                         a.href = url;
                         a.download = stem;

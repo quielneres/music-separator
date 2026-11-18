@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import WaveSurfer from 'wavesurfer.js';
-import { Volume2, VolumeX, Download } from 'lucide-react';
+import { Volume2, VolumeX, Download, AlertCircle, Loader2 } from 'lucide-react';
 
 export default function StemPlayer({ 
   url, 
@@ -21,9 +21,14 @@ export default function StemPlayer({
 }) {
   const containerRef = useRef(null);
   const wavesurferRef = useRef(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
     if (!containerRef.current) return;
+
+    setIsLoading(true);
+    setHasError(false);
 
     const ws = WaveSurfer.create({
       container: containerRef.current,
@@ -38,9 +43,22 @@ export default function StemPlayer({
       partialRender: true
     });
 
+    ws.on('ready', () => {
+      setIsLoading(false);
+      setHasError(false);
+    });
+
+    ws.on('error', (err) => {
+      console.error('WaveSurfer load error for', url, err);
+      setIsLoading(false);
+      setHasError(true);
+    });
+
     ws.load(url).catch(err => {
       if (err.name !== 'AbortError') {
-        console.error('WaveSurfer error:', err);
+        console.error('WaveSurfer catch error:', err);
+        setIsLoading(false);
+        setHasError(true);
       }
     });
     
@@ -76,7 +94,19 @@ export default function StemPlayer({
   return (
     <div className="stem-item glass-card animate-fade-in">
       <div className="stem-info">
-        <span className="stem-name">{name.replace('.wav', '').toUpperCase()}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span className="stem-name">{name.replace('.wav', '').toUpperCase()}</span>
+          {isLoading && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: '#94a3b8' }}>
+              <Loader2 size={12} className="animate-spin" /> Carregando...
+            </span>
+          )}
+          {hasError && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: '#ef4444' }} title={url}>
+              <AlertCircle size={12} /> Áudio não encontrado (404)
+            </span>
+          )}
+        </div>
         <div className="stem-controls">
           {/* Solo Button */}
           <button 
