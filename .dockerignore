@@ -1,0 +1,16 @@
+# Build context ignore
+venv/
+.venv/
+node_modules/
+web/node_modules/
+api/node_modules/
+web/.next/
+web/out/
+input/
+output/
+work/
+separated/
+.git/
+.idea/
+.DS_Store
+*.log

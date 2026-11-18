@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://localhost:5050/api
+      - NEXT_PUBLIC_AUDIO_ENGINE_URL=http://localhost:8000
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    ports:
+      - "5050:5050"
+    environment:
+      - PORT=5050
+      - NODE_ENV=production
+      - FASTAPI_ENGINE_URL=http://audio-engine:8000
+      - REDIS_URL=redis://redis:6379
+      - CORS_ORIGIN=http://localhost:3000
+    env_file:
+      - ./api/.env
+    depends_on:
+      - audio-engine
+      - redis
+    restart: unless-stopped
+
+  audio-engine:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - audio-storage-output:/app/output
+      - audio-storage-input:/app/input
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+volumes:
+  audio-storage-output:
+  audio-storage-input:

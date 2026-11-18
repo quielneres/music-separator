@@ -1,0 +1,14 @@
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+python-multipart>=0.0.9
+librosa>=0.10.1
+soundfile>=0.12.1
+numpy>=1.26.0,<2.0.0
+torch
+torchaudio
+dora_search==0.1.12
+julius==0.2.7
+treetable==0.2.6
+openunmix==1.3.0
+lameenc==1.8.2
+demucs==4.0.1
