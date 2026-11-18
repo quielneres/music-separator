@@ -66,7 +66,20 @@ app.get('/health', (req, res) => {
 
 // Middleware Global de Tratamento de Erros
 app.use((err, req, res, next) => {
-  console.error('Erro não tratado na API:', err);
+  if (err && err.name === 'MulterError') {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({
+        success: false,
+        error: `O arquivo enviado excede o limite máximo permitido de ${process.env.MAX_FILE_SIZE_MB || 250}MB.`
+      });
+    }
+    return res.status(400).json({
+      success: false,
+      error: `Erro no upload do arquivo: ${err.message}`
+    });
+  }
+
+  console.error('Erro na API:', err);
   res.status(err.status || 500).json({
     success: false,
     error: process.env.NODE_ENV === 'production' ? 'Ocorreu um erro interno no servidor.' : err.message

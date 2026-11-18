@@ -5,10 +5,12 @@ const Project = require('../models/Project');
 const User = require('../models/User');
 const { protect } = require('../middleware/auth');
 
-// Validação de Multer segura: limite de 50MB e filtro de tipo MIME
+// Configuração de limite de upload flexível (padrão 250MB para suportar áudios WAV e FLAC longos)
+const MAX_FILE_SIZE_MB = parseInt(process.env.MAX_FILE_SIZE_MB, 10) || 250;
+
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+  limits: { fileSize: MAX_FILE_SIZE_MB * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const isAudioMime = file.mimetype.startsWith('audio/');
     const isAudioExt = file.originalname.match(/\.(mp3|wav|flac|ogg|m4a|aac)$/i);
@@ -19,6 +21,25 @@ const upload = multer({
     }
   }
 });
+
+// Middleware com tratamento gracioso de erros do Multer (ex: LIMIT_FILE_SIZE)
+const handleUpload = (req, res, next) => {
+  upload.single('file')(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({
+          success: false,
+          error: `O arquivo enviado excede o limite máximo de ${MAX_FILE_SIZE_MB}MB.`
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        error: err.message || 'Erro no upload do arquivo.'
+      });
+    }
+    next();
+  });
+};
 
 const FASTAPI_URL = process.env.FASTAPI_ENGINE_URL || 'http://127.0.0.1:8000';
 
@@ -93,7 +114,7 @@ router.get('/:id', protect, async (req, res) => {
 // @route   POST /api/projects/upload
 // @desc    Upload file, analyze and trigger async stems processing
 // @access  Private
-router.post('/upload', protect, upload.single('file'), async (req, res) => {
+router.post('/upload', protect, handleUpload, async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, error: 'Por favor, envie um arquivo de áudio.' });
