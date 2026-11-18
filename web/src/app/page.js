@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Upload, Music, Settings, Library, Play, Pause, Square, SkipForward, Volume2, VolumeX, Download } from 'lucide-react';
-import StemPlayer from '@/components/StemPlayer';
+import { Upload, Music, Settings, Library } from 'lucide-react';
+import MultiTrackPlayer from '@/components/MultiTrackPlayer';
 
 // URLs parametrizadas via variáveis de ambiente com fallback local
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5050/api';
@@ -25,23 +25,6 @@ export default function Home() {
   const [authMode, setAuthMode] = useState('login'); // login, register
   const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' });
   const [authError, setAuthError] = useState('');
-
-  // Multi-track player states
-  const wavesurfersRef = useRef({});
-  const isMasterPlayingRef = useRef(false);
-  const isSyncingRef = useRef(false);
-  const [isMasterPlaying, setIsMasterPlaying] = useState(false);
-  const [trackVolumes, setTrackVolumes] = useState({});
-  const [trackMutes, setTrackMutes] = useState({});
-  const [trackSolos, setTrackSolos] = useState({});
-  const [masterVolume, setMasterVolume] = useState(1.0);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-
-  // Mantém isMasterPlayingRef sempre sincronizado
-  useEffect(() => {
-    isMasterPlayingRef.current = isMasterPlaying;
-  }, [isMasterPlaying]);
 
   // Fetch library projects
   const fetchLibrary = useCallback(async () => {
@@ -89,18 +72,6 @@ export default function Home() {
       fetchLibrary();
     }
   }, [token, fetchLibrary]);
-
-  // Reset player states when stemsData changes
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setIsMasterPlaying(false);
-    setTrackVolumes({});
-    setTrackMutes({});
-    setTrackSolos({});
-    setCurrentTime(0);
-    setDuration(0);
-    wavesurfersRef.current = {};
-  }, [stemsData]);
 
   // Polling automático da biblioteca se houver músicas em processamento
   useEffect(() => {
@@ -265,192 +236,6 @@ export default function Home() {
     if (files.length > 0) {
       setFile(files[0]);
     }
-  };
-
-  // Synchronized Multi-track Logic
-  const handleRegisterWs = (name, ws) => {
-    wavesurfersRef.current[name] = ws;
-
-    // Initialize track volumes & controls locally if not set
-    setTrackVolumes(prev => ({ ...prev, [name]: prev[name] ?? 0.8 }));
-    setTrackMutes(prev => ({ ...prev, [name]: prev[name] ?? false }));
-    setTrackSolos(prev => ({ ...prev, [name]: prev[name] ?? false }));
-
-    ws.on('ready', () => {
-      let maxDuration = 0;
-      Object.values(wavesurfersRef.current).forEach(w => {
-        maxDuration = Math.max(maxDuration, w.getDuration());
-      });
-      setDuration(maxDuration);
-    });
-
-    ws.on('timeupdate', (time) => {
-      const firstStem = Object.keys(wavesurfersRef.current)[0];
-      if (name === firstStem) {
-        setCurrentTime(time);
-      }
-    });
-
-    ws.on('finish', () => {
-      const firstStem = Object.keys(wavesurfersRef.current)[0];
-      if (name === firstStem) {
-        setIsMasterPlaying(false);
-        isMasterPlayingRef.current = false;
-      }
-    });
-
-    ws.on('play', () => {
-      setIsMasterPlaying(true);
-      isMasterPlayingRef.current = true;
-    });
-
-    ws.on('pause', () => {
-      const anyPlaying = Object.values(wavesurfersRef.current).some(w => {
-        try { return w && typeof w.isPlaying === 'function' && w.isPlaying(); } catch (e) { return false; }
-      });
-      if (!anyPlaying) {
-        setIsMasterPlaying(false);
-        isMasterPlayingRef.current = false;
-      }
-    });
-
-    ws.on('interaction', () => {
-      if (isSyncingRef.current) return;
-      isSyncingRef.current = true;
-
-      const time = ws.getCurrentTime();
-      setCurrentTime(time);
-      const isCurrentlyPlaying = isMasterPlayingRef.current || (typeof ws.isPlaying === 'function' && ws.isPlaying());
-
-      // Sincroniza todas as faixas sem loop
-      Object.entries(wavesurfersRef.current).forEach(([k, w]) => {
-        try {
-          if (k !== name) {
-            w.setTime(time);
-          }
-          if (isCurrentlyPlaying) {
-            w.play().catch(() => {});
-          } else {
-            w.pause();
-          }
-        } catch (e) {}
-      });
-
-      setTimeout(() => {
-        isSyncingRef.current = false;
-      }, 50);
-    });
-
-    if (isMasterPlayingRef.current) {
-      ws.play().catch(() => {});
-    }
-  };
-
-  const handleDestroyWs = (name) => {
-    delete wavesurfersRef.current[name];
-  };
-
-  const toggleMasterPlay = () => {
-    const instances = Object.values(wavesurfersRef.current);
-    if (!instances.length) return;
-
-    // Pergunta diretamente ao nó de áudio se há som tocando agora
-    const anyPlaying = instances.some(ws => {
-      try {
-        return ws && typeof ws.isPlaying === 'function' && ws.isPlaying();
-      } catch (e) {
-        return false;
-      }
-    });
-
-    if (anyPlaying) {
-      // Se estava tocando, PAUSA TODAS
-      instances.forEach(ws => {
-        try { ws.pause(); } catch (e) {}
-      });
-      setIsMasterPlaying(false);
-      isMasterPlayingRef.current = false;
-    } else {
-      // Se estava pausado, TOCA TODAS
-      instances.forEach(ws => {
-        try { ws.play().catch(() => {}); } catch (e) {}
-      });
-      setIsMasterPlaying(true);
-      isMasterPlayingRef.current = true;
-    }
-  };
-
-  const stopMasterPlay = () => {
-    Object.values(wavesurfersRef.current).forEach(ws => {
-      try {
-        ws.pause();
-        ws.setTime(0);
-      } catch (e) {}
-    });
-    setIsMasterPlaying(false);
-    isMasterPlayingRef.current = false;
-    setCurrentTime(0);
-  };
-
-  const handleMasterSeek = (time) => {
-    setCurrentTime(time);
-    const isCurrentlyPlaying = isMasterPlayingRef.current;
-    Object.values(wavesurfersRef.current).forEach(ws => {
-      try {
-        ws.setTime(time);
-        if (isCurrentlyPlaying) {
-          ws.play().catch(() => {});
-        } else {
-          ws.pause();
-        }
-      } catch (e) {}
-    });
-  };
-
-  // Alterna Solo (S) e desfaz Mute automaticamente
-  const handleToggleSolo = (stem) => {
-    setTrackSolos(prev => {
-      const willBeSoloed = !prev[stem];
-      if (willBeSoloed) {
-        setTrackMutes(mutes => ({ ...mutes, [stem]: false }));
-      }
-      return { ...prev, [stem]: willBeSoloed };
-    });
-  };
-
-  // Alterna Mute (M) e cancela Solo se estiver ativo
-  const handleToggleMute = (stem) => {
-    setTrackMutes(prev => {
-      const willBeMuted = !prev[stem];
-      if (willBeMuted) {
-        setTrackSolos(solos => ({ ...solos, [stem]: false }));
-      }
-      return { ...prev, [stem]: willBeMuted };
-    });
-  };
-
-  const handleMasterVolumeChange = (vol) => {
-    setMasterVolume(vol);
-  };
-
-  const handleDownloadAll = () => {
-    if (!stemsData || !stemsData.stems) return;
-    stemsData.stems.forEach(stem => {
-      const url = `${AUDIO_BASE_URL}/output/${encodeURIComponent(stemsData.folder)}/${encodeURIComponent(stem)}`;
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = stem;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    });
-  };
-
-  const formatTime = (seconds) => {
-    if (isNaN(seconds) || seconds === null) return '0:00';
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
   // If not authenticated, show premium auth card
@@ -843,91 +628,14 @@ export default function Home() {
               </div>
             )}
 
-            {view === 'player' && (
-              <div className="stems-container animate-fade-in">
-                <div className="stems-header">
-                  <h2>{stemsData?.folder.split('_', 1)[-1] || 'Player'}</h2>
-                  <button className="btn-secondary" onClick={() => setView('library')}>
-                    Back to Library
-                  </button>
-                </div>
-
-                {/* Master Studio Controls Dashboard */}
-                <div className="master-controls glass">
-                  <div className="master-left">
-                    <button onClick={toggleMasterPlay} className="master-play-btn" title={isMasterPlaying ? "Pausar" : "Tocar"}>
-                      {isMasterPlaying ? <Pause size={22} fill="white" /> : <Play size={22} fill="white" style={{ marginLeft: 3 }} />}
-                    </button>
-                    <button onClick={stopMasterPlay} className="master-stop-btn" title="Parar e voltar ao início">
-                      <Square size={16} fill="white" />
-                    </button>
-                    <div className="time-display">
-                      <span className="current-time">{formatTime(currentTime)}</span>
-                      <span className="divider">/</span>
-                      <span className="total-time">{formatTime(duration)}</span>
-                    </div>
-                  </div>
-
-                  <div className="master-timeline-container">
-                    <input
-                      type="range"
-                      min="0"
-                      max={duration || 100}
-                      step="0.05"
-                      value={currentTime}
-                      onChange={(e) => handleMasterSeek(parseFloat(e.target.value))}
-                      className="master-timeline"
-                    />
-                  </div>
-
-                  <div className="master-right">
-                    <div className="master-volume-container">
-                      {masterVolume === 0 ? <VolumeX size={16} className="volume-icon" /> : <Volume2 size={16} className="volume-icon" />}
-                      <input
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.05"
-                        value={masterVolume}
-                        onChange={(e) => handleMasterVolumeChange(parseFloat(e.target.value))}
-                        className="master-volume-slider"
-                      />
-                    </div>
-                    <button onClick={handleDownloadAll} className="btn-secondary btn-small" title="Download All Stems">
-                      <Download size={15} /> All
-                    </button>
-                  </div>
-                </div>
-
-                <div className="stems-list">
-                  {stemsData?.stems.map((stem, idx) => (
-                    <StemPlayer 
-                      key={stem}
-                      name={stem}
-                      url={`${AUDIO_BASE_URL}/output/${encodeURIComponent(stemsData.folder)}/${encodeURIComponent(stem)}`}
-                      color={['#8b5cf6', '#06b6d4', '#ec4899', '#10b981'][idx % 4]}
-                      volume={trackVolumes[stem] !== undefined ? trackVolumes[stem] * masterVolume : 0.8 * masterVolume}
-                      isMuted={trackMutes[stem] || false}
-                      isSoloed={trackSolos[stem] || false}
-                      isAnySoloed={Object.values(trackSolos).some(v => v)}
-                      onVolumeChange={(val) => setTrackVolumes(prev => ({ ...prev, [stem]: val }))}
-                      onMuteToggle={() => handleToggleMute(stem)}
-                      onSoloToggle={() => handleToggleSolo(stem)}
-                      onDownload={() => {
-                        const url = `${AUDIO_BASE_URL}/output/${encodeURIComponent(stemsData.folder)}/${encodeURIComponent(stem)}`;
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = stem;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                      }}
-                      onReady={handleRegisterWs}
-                      onDestroy={handleDestroyWs}
-                    />
-                  ))}
-                </div>
-              </div>
+            {view === 'player' && stemsData && (
+              <MultiTrackPlayer
+                key={stemsData.folder}
+                folder={stemsData.folder}
+                stems={stemsData.stems}
+                audioBaseUrl={AUDIO_BASE_URL}
+                onBack={() => setView('library')}
+              />
             )}
               </>
             )}
