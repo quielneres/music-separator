@@ -6,6 +6,7 @@ soundfile>=0.12.1
 numpy>=1.26.0,<2.0.0
 torch
 torchaudio
+torchcodec
 dora_search==0.1.12
 julius==0.2.7
 treetable==0.2.6
