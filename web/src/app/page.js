@@ -28,6 +28,7 @@ export default function Home() {
 
   // Multi-track player states
   const wavesurfersRef = useRef({});
+  const isMasterPlayingRef = useRef(false);
   const [isMasterPlaying, setIsMasterPlaying] = useState(false);
   const [trackVolumes, setTrackVolumes] = useState({});
   const [trackMutes, setTrackMutes] = useState({});
@@ -35,6 +36,11 @@ export default function Home() {
   const [masterVolume, setMasterVolume] = useState(1.0);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+
+  // Mantém isMasterPlayingRef sempre sincronizado para eventos assíncronos
+  useEffect(() => {
+    isMasterPlayingRef.current = isMasterPlaying;
+  }, [isMasterPlaying]);
 
   // Fetch library projects
   const fetchLibrary = useCallback(async () => {
@@ -293,15 +299,25 @@ export default function Home() {
 
     ws.on('interaction', () => {
       const time = ws.getCurrentTime();
-      Object.entries(wavesurfersRef.current).forEach(([k, w]) => {
-        if (k !== name) {
-          w.setTime(time);
-        }
-      });
       setCurrentTime(time);
+      const isCurrentlyPlaying = isMasterPlayingRef.current;
+
+      // Sincroniza todas as faixas sem descompasso
+      Object.entries(wavesurfersRef.current).forEach(([k, w]) => {
+        try {
+          if (k !== name) {
+            w.setTime(time);
+          }
+          if (isCurrentlyPlaying) {
+            w.play().catch(() => {});
+          } else {
+            w.pause();
+          }
+        } catch (e) {}
+      });
     });
 
-    if (isMasterPlaying) {
+    if (isMasterPlayingRef.current) {
       ws.play().catch(() => {});
     }
   };
@@ -311,22 +327,54 @@ export default function Home() {
   };
 
   const toggleMasterPlay = () => {
-    const nextPlaying = !isMasterPlaying;
+    const nextPlaying = !isMasterPlayingRef.current;
     setIsMasterPlaying(nextPlaying);
     Object.values(wavesurfersRef.current).forEach(ws => {
-      if (nextPlaying) {
-        ws.play().catch(() => {});
-      } else {
-        ws.pause();
-      }
+      try {
+        if (nextPlaying) {
+          ws.play().catch(() => {});
+        } else {
+          ws.pause();
+        }
+      } catch (e) {}
     });
   };
 
   const handleMasterSeek = (time) => {
-    Object.values(wavesurfersRef.current).forEach(ws => {
-      ws.setTime(time);
-    });
     setCurrentTime(time);
+    const isCurrentlyPlaying = isMasterPlayingRef.current;
+    Object.values(wavesurfersRef.current).forEach(ws => {
+      try {
+        ws.setTime(time);
+        if (isCurrentlyPlaying) {
+          ws.play().catch(() => {});
+        } else {
+          ws.pause();
+        }
+      } catch (e) {}
+    });
+  };
+
+  // Alterna Solo (S) e desfaz Mute automaticamente
+  const handleToggleSolo = (stem) => {
+    setTrackSolos(prev => {
+      const willBeSoloed = !prev[stem];
+      if (willBeSoloed) {
+        setTrackMutes(mutes => ({ ...mutes, [stem]: false }));
+      }
+      return { ...prev, [stem]: willBeSoloed };
+    });
+  };
+
+  // Alterna Mute (M) e cancela Solo se estiver ativo
+  const handleToggleMute = (stem) => {
+    setTrackMutes(prev => {
+      const willBeMuted = !prev[stem];
+      if (willBeMuted) {
+        setTrackSolos(solos => ({ ...solos, [stem]: false }));
+      }
+      return { ...prev, [stem]: willBeMuted };
+    });
   };
 
   const handleMasterVolumeChange = (vol) => {
@@ -808,8 +856,8 @@ export default function Home() {
                       isSoloed={trackSolos[stem] || false}
                       isAnySoloed={Object.values(trackSolos).some(v => v)}
                       onVolumeChange={(val) => setTrackVolumes(prev => ({ ...prev, [stem]: val }))}
-                      onMuteToggle={() => setTrackMutes(prev => ({ ...prev, [stem]: !prev[stem] }))}
-                      onSoloToggle={() => setTrackSolos(prev => ({ ...prev, [stem]: !prev[stem] }))}
+                      onMuteToggle={() => handleToggleMute(stem)}
+                      onSoloToggle={() => handleToggleSolo(stem)}
                       onDownload={() => {
                         const url = `${AUDIO_BASE_URL}/output/${encodeURIComponent(stemsData.folder)}/${encodeURIComponent(stem)}`;
                         const a = document.createElement('a');

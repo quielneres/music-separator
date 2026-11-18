@@ -48,14 +48,20 @@ export default function StemPlayer({
       setHasError(false);
     });
 
+    const isAbort = (err) => {
+      const msg = typeof err === 'string' ? err : (err?.message || err?.name || '');
+      return msg.includes('AbortError') || msg.includes('aborted');
+    };
+
     ws.on('error', (err) => {
+      if (isAbort(err)) return;
       console.error('WaveSurfer load error for', url, err);
       setIsLoading(false);
       setHasError(true);
     });
 
     ws.load(url).catch(err => {
-      if (err.name !== 'AbortError') {
+      if (!isAbort(err)) {
         console.error('WaveSurfer catch error:', err);
         setIsLoading(false);
         setHasError(true);
@@ -82,10 +88,12 @@ export default function StemPlayer({
   useEffect(() => {
     if (wavesurferRef.current) {
       let targetVolume = volume;
-      if (isMuted) {
-        targetVolume = 0;
-      } else if (isAnySoloed && !isSoloed) {
-        targetVolume = 0;
+      if (isAnySoloed) {
+        // Se há Solo ativo no mixer, o Solo tem precedência
+        targetVolume = (isSoloed && !isMuted) ? volume : 0;
+      } else {
+        // Sem solo ativo, respeita o mute individual
+        targetVolume = isMuted ? 0 : volume;
       }
       wavesurferRef.current.setVolume(targetVolume);
     }
